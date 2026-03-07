@@ -29,22 +29,34 @@ const historyTableBody = document.querySelector('#history-table tbody');
 function parseCSV(text) {
   const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
   if (!lines.length) return [];
-  const header = lines[0].split(',');
-  const levelIdx = header.indexOf('level');
-  const wordIdx = header.indexOf('word');
+
+  const splitLine = (line) =>
+    line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g)?.map(s => s.replace(/^"|"$/g, '')) || [];
+
+  const header = splitLine(lines[0]);
+  const levelIdx   = header.indexOf('level');
+  const wordIdx    = header.indexOf('word');
   const meaningIdx = header.indexOf('meaning');
+
   if (levelIdx === -1 || wordIdx === -1 || meaningIdx === -1) {
     alert('CSVに level, word, meaning のヘッダーが必要です。');
     return [];
   }
-  return lines.slice(1).map(line => {
-    const cols = line.split(',');
-    return {
-      level: cols[levelIdx],
-      word: cols[wordIdx],
+
+  const data = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const cols = splitLine(lines[i]);
+    if (!cols.length) continue;
+
+    data.push({
+      level:   cols[levelIdx],
+      word:    cols[wordIdx],
       meaning: cols[meaningIdx]
-    };
-  });
+    });
+  }
+
+  return data;
 }
 
 fileInput.addEventListener('change', e => {
