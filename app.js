@@ -235,6 +235,21 @@ function startTimer() {
     }
   }, 100);
 }
+// --- 自己採点モード用ボタン ---
+showAnswerBtn.addEventListener('click', () => {
+  answerText.style.display = 'block';
+  showAnswerBtn.style.display = 'none';
+  judgeButtons.style.display = 'flex';
+  speak(answerText.textContent);
+});
+
+correctBtn.addEventListener('click', () => {
+  handleAnswer(true, false);
+});
+
+wrongBtn.addEventListener('click', () => {
+  handleAnswer(false, false);
+});
 
 function calcBaseScore(elapsedSec) {
   const t = Math.max(0, Math.min(20, elapsedSec));
