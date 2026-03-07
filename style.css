@@ -1,6 +1,6 @@
 body {
   font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-  max-width: 900px;
+  max-width: 960px;
   margin: 20px auto;
   padding: 0 10px 40px;
   line-height: 1.5;
@@ -26,6 +26,14 @@ h2 {
 
 .row {
   margin: 6px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.top-row {
+  justify-content: space-between;
 }
 
 label {
@@ -61,18 +69,18 @@ button:disabled {
 }
 
 #timer {
-  margin-left: auto;
   font-weight: bold;
 }
 
-#score-info, #combo-info {
+#score-info,
+#combo-info {
   font-size: 0.9rem;
   color: #333;
-  margin-left: 10px;
 }
 
 .choices {
   margin: 8px 0;
+  width: 100%;
 }
 
 .choices button {
@@ -85,6 +93,7 @@ button:disabled {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.85rem;
+  margin-top: 8px;
 }
 
 #history-table th,
@@ -95,4 +104,9 @@ button:disabled {
 
 #history-table thead {
   background: #eee;
+}
+
+select {
+  padding: 2px 4px;
+  font-size: 0.9rem;
 }
