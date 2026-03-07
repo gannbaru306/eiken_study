@@ -2,22 +2,21 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>英検学習アプリ</title>
+  <title>英検学習アプリv1.2</title>
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-  <h1>英検 学習アプリv1.1</h1>
+  <h1>英検 学習アプリ</h1>
 
   <section class="panel">
-    <h2>データ読み込み</h2>
-    <p>英検データ（CSV：level,word,meaning）を選択してください。</p>
+    <h2>1. データ読み込み</h2>
     <input type="file" id="file-input" accept=".csv">
     <p class="info" id="file-info"></p>
   </section>
 
   <section class="panel">
-    <h2>設定</h2>
+    <h2>2. 設定</h2>
 
     <div class="row">
       <strong>級：</strong>
@@ -32,7 +31,7 @@
 
     <div class="row">
       <strong>出題方向：</strong>
-      <label><input type="radio" name="direction" value="en2ja" checked>英 → 日（読み上げあり）</label>
+      <label><input type="radio" name="direction" value="en2ja" checked>英 → 日</label>
       <label><input type="radio" name="direction" value="ja2en">日 → 英</label>
       <label><input type="radio" name="direction" value="random">ランダム</label>
     </div>
@@ -56,7 +55,7 @@
   </section>
 
   <section class="panel" id="quiz-panel" style="display:none;">
-    <h2>クイズ</h2>
+    <h2>3. クイズ</h2>
     <div class="row top-row">
       <span id="progress"></span>
       <span id="timer"></span>
@@ -81,7 +80,7 @@
   </section>
 
   <section class="panel">
-    <h2>履歴・分析</h2>
+    <h2>4. 履歴・分析</h2>
 
     <div class="row">
       <strong>フィルタ：</strong>
@@ -133,6 +132,7 @@
           <th>基礎スコア</th>
           <th>コンボ</th>
           <th>加算スコア</th>
+          <th>復習済</th>
         </tr>
       </thead>
       <tbody></tbody>
