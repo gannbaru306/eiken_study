@@ -8,8 +8,12 @@ let startTime = 0;
 let history = [];
 let wrongQuestions = [];
 let chart = null;
-let englishVoice = null;
 
+// 音声
+let englishVoice = null;
+let japaneseVoice = null;
+
+// DOM取得
 const fileInput = document.getElementById('file-input');
 const fileInfo = document.getElementById('file-info');
 const maxInfo = document.getElementById('max-info');
@@ -37,7 +41,7 @@ const resetFilterBtn = document.getElementById('reset-filter-btn');
 const exportCsvBtn = document.getElementById('export-csv-btn');
 const chartCanvas = document.getElementById('history-chart');
 
-// --- CSVパーサー（ダブルクォート内のカンマ対応） ---
+// --- CSVパーサー（クォート対応） ---
 function parseCSV(text) {
   const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
   if (!lines.length) return [];
@@ -62,20 +66,26 @@ function parseCSV(text) {
     data.push({
       level: cols[levelIdx],
       word: cols[wordIdx],
-      meaning: cols[meaningIdx]
+      meaning: cols[meaningIdx],
+      reviewed: false // ← 復習済みフラグ
     });
   }
   return data;
 }
 
-// --- 音声（英語ボイスの選択） ---
+// --- 音声ボイスの初期化 ---
 function initVoices() {
   const voices = window.speechSynthesis.getVoices();
   if (!voices || !voices.length) return;
-  // 英語っぽい声を優先的に選ぶ
+
   englishVoice =
     voices.find(v => v.lang === 'en-US') ||
     voices.find(v => v.lang.startsWith('en')) ||
+    null;
+
+  japaneseVoice =
+    voices.find(v => v.lang === 'ja-JP') ||
+    voices.find(v => v.lang.startsWith('ja')) ||
     null;
 }
 
@@ -84,16 +94,23 @@ if ('speechSynthesis' in window) {
   initVoices();
 }
 
-function speak(text) {
+function speak(text, lang) {
   if (!window.speechSynthesis) return;
   const uttr = new SpeechSynthesisUtterance(text);
-  uttr.lang = 'en-US';
-  if (englishVoice) uttr.voice = englishVoice;
+
+  if (lang === 'en') {
+    uttr.lang = 'en-US';
+    if (englishVoice) uttr.voice = englishVoice;
+  } else {
+    uttr.lang = 'ja-JP';
+    if (japaneseVoice) uttr.voice = japaneseVoice;
+  }
+
   window.speechSynthesis.cancel();
   window.speechSynthesis.speak(uttr);
 }
 
-// --- イベント類 ---
+// --- イベント ---
 fileInput.addEventListener('change', e => {
   const file = e.target.files[0];
   if (!file) return;
@@ -107,18 +124,13 @@ fileInput.addEventListener('change', e => {
 });
 
 function getSelectedLevel() {
-  const r = document.querySelector('input[name="level"]:checked');
-  return r ? r.value : '5';
+  return document.querySelector('input[name="level"]:checked').value;
 }
-
 function getDirection() {
-  const r = document.querySelector('input[name="direction"]:checked');
-  return r ? r.value : 'en2ja';
+  return document.querySelector('input[name="direction"]:checked').value;
 }
-
 function getMode() {
-  const r = document.querySelector('input[name="mode"]:checked');
-  return r ? r.value : 'self';
+  return document.querySelector('input[name="mode"]:checked').value;
 }
 
 function updateMaxInfo() {
@@ -128,72 +140,74 @@ function updateMaxInfo() {
   }
   const lv = getSelectedLevel();
   const filtered = allData.filter(d => d.level === lv);
-  maxInfo.textContent = `（この級の最大問題数：${filtered.length}）`;
+  maxInfo.textContent = `（最大：${filtered.length}問）`;
 }
 
 document.querySelectorAll('input[name="level"]').forEach(r => {
   r.addEventListener('change', updateMaxInfo);
 });
 
+// --- クイズ開始 ---
 startBtn.addEventListener('click', () => {
   if (!allData.length) {
-    alert('先にCSVファイルを読み込んでください。');
+    alert('CSVを読み込んでください。');
     return;
   }
+
   const lv = getSelectedLevel();
-  const filtered = allData.filter(d => d.level === lv);
+  const filtered = allData.filter(d => d.level === lv && !d.reviewed);
+
   if (!filtered.length) {
-    alert(`${lv}級のデータがありません。`);
+    alert('この級の未復習データがありません。');
     return;
   }
+
   let n = parseInt(questionCountInput.value, 10);
   if (isNaN(n) || n < 1) n = 1;
   if (n > filtered.length) n = filtered.length;
-  questionCountInput.value = n;
 
   currentSet = filtered.slice().sort(() => Math.random() - 0.5).slice(0, n);
   index = 0;
   combo = 0;
   totalScore = 0;
   wrongQuestions = [];
+
   quizPanel.style.display = 'block';
-  answerText.style.display = 'none';
   scoreInfo.textContent = 'スコア: 0';
   comboInfo.textContent = 'コンボ: 0';
+
   showQuestion();
 });
 
+// --- 復習モード ---
 reviewBtn.addEventListener('click', () => {
   if (!wrongQuestions.length) {
-    alert('復習する間違い問題がありません。');
+    alert('復習する問題がありません。');
     return;
   }
+
   currentSet = wrongQuestions.slice();
   index = 0;
   combo = 0;
   totalScore = 0;
+
   quizPanel.style.display = 'block';
-  answerText.style.display = 'none';
   scoreInfo.textContent = 'スコア: 0';
   comboInfo.textContent = 'コンボ: 0';
+
   showQuestion();
 });
 
-showAnswerBtn.addEventListener('click', () => {
-  answerText.style.display = 'block';
-});
-
-correctBtn.addEventListener('click', () => handleAnswer(true, false));
-wrongBtn.addEventListener('click', () => handleAnswer(false, false));
-
-// --- タイマー・スコア ---
+// --- タイマー ---
 function startTimer() {
   clearInterval(timerId);
   startTime = performance.now();
   timerEl.textContent = '残り: 20.0s';
+
   timerId = setInterval(() => {
     const elapsed = (performance.now() - startTime) / 1000;
     const remain = 20 - elapsed;
+
     if (remain <= 0) {
       timerEl.textContent = '残り: 0.0s';
       clearInterval(timerId);
@@ -206,8 +220,7 @@ function startTimer() {
 
 function calcBaseScore(elapsedSec) {
   const t = Math.max(0, Math.min(20, elapsedSec));
-  const base = 1000 * (1 - t / 20);
-  return Math.round(base);
+  return Math.round(1000 * (1 - t / 20));
 }
 
 // --- 出題 ---
@@ -220,6 +233,7 @@ function showQuestion() {
   if (direction === 'random') {
     actualDir = Math.random() < 0.5 ? 'en2ja' : 'ja2en';
   }
+  q.actualDir = actualDir;
 
   let question, answer;
   if (actualDir === 'en2ja') {
@@ -230,11 +244,10 @@ function showQuestion() {
     answer = q.word;
   }
 
-  q.actualDir = actualDir; // 後で履歴用に保持
-
   questionText.textContent = question;
   answerText.textContent = answer;
   answerText.style.display = 'none';
+
   progressEl.textContent = `問題 ${index + 1} / ${currentSet.length}`;
   comboInfo.textContent = `コンボ: ${combo}`;
   choicesEl.innerHTML = '';
@@ -248,8 +261,11 @@ function showQuestion() {
     setupChoices(q, actualDir);
   }
 
+  // 読み上げ
   if (actualDir === 'en2ja') {
-    speak(question);
+    speak(question, 'en');
+  } else {
+    speak(question, 'ja');
   }
 
   startTimer();
@@ -259,20 +275,21 @@ function setupChoices(q, actualDir) {
   const correct = actualDir === 'en2ja' ? q.meaning : q.word;
   const pool = allData.filter(d => d.level === q.level && d !== q);
   const options = [correct];
+
   while (options.length < 4 && pool.length) {
     const r = pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
     const opt = actualDir === 'en2ja' ? r.meaning : r.word;
     if (!options.includes(opt)) options.push(opt);
   }
   while (options.length < 4) options.push(correct);
+
   options.sort(() => Math.random() - 0.5);
 
   options.forEach(opt => {
     const btn = document.createElement('button');
     btn.textContent = opt;
     btn.addEventListener('click', () => {
-      const isCorrect = opt === correct;
-      handleAnswer(isCorrect, false);
+      handleAnswer(opt === correct, false);
     });
     choicesEl.appendChild(btn);
   });
@@ -301,12 +318,19 @@ function handleAnswer(isCorrect, timeout) {
   scoreInfo.textContent = `スコア: ${totalScore}`;
   comboInfo.textContent = `コンボ: ${combo}`;
 
+  // 間違えた問題 → 復習対象
   if (!isCorrect || timeout) {
-    wrongQuestions.push({ level: q.level, word: q.word, meaning: q.meaning });
+    wrongQuestions.push(q);
     reviewBtn.disabled = false;
   }
 
-  const record = {
+  // 復習済みフラグ（復習モード時のみ）
+  if (reviewBtn.disabled === false && isCorrect && !timeout) {
+    q.reviewed = true;
+  }
+
+  // 履歴追加
+  history.push({
     no: history.length + 1,
     level: q.level,
     direction: actualDir,
@@ -316,9 +340,10 @@ function handleAnswer(isCorrect, timeout) {
     time: Math.min(20, elapsed).toFixed(2),
     baseScore,
     combo: comboBefore,
-    added
-  };
-  history.push(record);
+    added,
+    reviewed: q.reviewed
+  });
+
   renderHistory();
   updateChart();
 
@@ -331,7 +356,7 @@ function handleAnswer(isCorrect, timeout) {
   }
 }
 
-// --- 履歴表示・フィルタ・CSV ---
+// --- 履歴表示 ---
 function getFilteredHistory() {
   return history.filter(r => {
     if (filterLevel.value !== 'all' && r.level !== filterLevel.value) return false;
@@ -345,6 +370,7 @@ function getFilteredHistory() {
 function renderHistory() {
   const filtered = getFilteredHistory();
   historyTableBody.innerHTML = '';
+
   filtered.forEach(r => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -358,11 +384,13 @@ function renderHistory() {
       <td>${r.baseScore}</td>
       <td>${r.combo}</td>
       <td>${r.added}</td>
+      <td>${r.reviewed ? '△' : ''}</td>
     `;
     historyTableBody.appendChild(tr);
   });
 }
 
+// --- フィルタ ---
 applyFilterBtn.addEventListener('click', () => {
   renderHistory();
   updateChart();
@@ -376,16 +404,19 @@ resetFilterBtn.addEventListener('click', () => {
   updateChart();
 });
 
+// --- CSVエクスポート ---
 exportCsvBtn.addEventListener('click', () => {
   if (!history.length) {
     alert('履歴がありません。');
     return;
   }
+
   const rows = [
-    ['no', 'level', 'direction', 'question', 'answer', 'correct', 'time', 'baseScore', 'combo', 'added']
+    ['no', 'level', 'direction', 'question', 'answer', 'correct', 'time', 'baseScore', 'combo', 'added', 'reviewed']
   ];
+
   history.forEach(r => {
-    const row = [
+    rows.push([
       r.no,
       r.level,
       r.direction,
@@ -395,23 +426,26 @@ exportCsvBtn.addEventListener('click', () => {
       r.time,
       r.baseScore,
       r.combo,
-      r.added
-    ];
-    rows.push(row);
+      r.added,
+      r.reviewed ? '1' : '0'
+    ]);
   });
+
   const csv = rows.map(r => r.join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
+
   const a = document.createElement('a');
   a.href = url;
   a.download = 'history.csv';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+
   URL.revokeObjectURL(url);
 });
 
-// --- グラフ（正解/不正解の件数） ---
+// --- グラフ ---
 function updateChart() {
   const filtered = getFilteredHistory();
   const correctCount = filtered.filter(r => r.correct).length;
@@ -435,12 +469,8 @@ function updateChart() {
       data,
       options: {
         responsive: true,
-        plugins: {
-          legend: { display: false }
-        },
-        scales: {
-          y: { beginAtZero: true, precision: 0 }
-        }
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, precision: 0 } }
       }
     });
   }
