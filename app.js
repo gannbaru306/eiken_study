@@ -6,11 +6,15 @@ let totalScore = 0;
 let timerId = null;
 let startTime = 0;
 let history = [];
+let wrongQuestions = [];
+let chart = null;
+let englishVoice = null;
 
 const fileInput = document.getElementById('file-input');
 const fileInfo = document.getElementById('file-info');
 const maxInfo = document.getElementById('max-info');
 const startBtn = document.getElementById('start-btn');
+const reviewBtn = document.getElementById('review-btn');
 const quizPanel = document.getElementById('quiz-panel');
 const progressEl = document.getElementById('progress');
 const timerEl = document.getElementById('timer');
@@ -25,7 +29,15 @@ const choicesEl = document.getElementById('choices');
 const judgeButtons = document.getElementById('judge-buttons');
 const questionCountInput = document.getElementById('question-count');
 const historyTableBody = document.querySelector('#history-table tbody');
+const filterLevel = document.getElementById('filter-level');
+const filterDirection = document.getElementById('filter-direction');
+const filterCorrect = document.getElementById('filter-correct');
+const applyFilterBtn = document.getElementById('apply-filter-btn');
+const resetFilterBtn = document.getElementById('reset-filter-btn');
+const exportCsvBtn = document.getElementById('export-csv-btn');
+const chartCanvas = document.getElementById('history-chart');
 
+// --- CSVパーサー（ダブルクォート内のカンマ対応） ---
 function parseCSV(text) {
   const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
   if (!lines.length) return [];
@@ -34,8 +46,8 @@ function parseCSV(text) {
     line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g)?.map(s => s.replace(/^"|"$/g, '')) || [];
 
   const header = splitLine(lines[0]);
-  const levelIdx   = header.indexOf('level');
-  const wordIdx    = header.indexOf('word');
+  const levelIdx = header.indexOf('level');
+  const wordIdx = header.indexOf('word');
   const meaningIdx = header.indexOf('meaning');
 
   if (levelIdx === -1 || wordIdx === -1 || meaningIdx === -1) {
@@ -44,21 +56,44 @@ function parseCSV(text) {
   }
 
   const data = [];
-
   for (let i = 1; i < lines.length; i++) {
     const cols = splitLine(lines[i]);
     if (!cols.length) continue;
-
     data.push({
-      level:   cols[levelIdx],
-      word:    cols[wordIdx],
+      level: cols[levelIdx],
+      word: cols[wordIdx],
       meaning: cols[meaningIdx]
     });
   }
-
   return data;
 }
 
+// --- 音声（英語ボイスの選択） ---
+function initVoices() {
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices || !voices.length) return;
+  // 英語っぽい声を優先的に選ぶ
+  englishVoice =
+    voices.find(v => v.lang === 'en-US') ||
+    voices.find(v => v.lang.startsWith('en')) ||
+    null;
+}
+
+if ('speechSynthesis' in window) {
+  window.speechSynthesis.onvoiceschanged = initVoices;
+  initVoices();
+}
+
+function speak(text) {
+  if (!window.speechSynthesis) return;
+  const uttr = new SpeechSynthesisUtterance(text);
+  uttr.lang = 'en-US';
+  if (englishVoice) uttr.voice = englishVoice;
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(uttr);
+}
+
+// --- イベント類 ---
 fileInput.addEventListener('change', e => {
   const file = e.target.files[0];
   if (!file) return;
@@ -120,21 +155,38 @@ startBtn.addEventListener('click', () => {
   index = 0;
   combo = 0;
   totalScore = 0;
-  history = [];
+  wrongQuestions = [];
   quizPanel.style.display = 'block';
   answerText.style.display = 'none';
   scoreInfo.textContent = 'スコア: 0';
-  renderHistory();
+  comboInfo.textContent = 'コンボ: 0';
   showQuestion();
 });
 
-function speak(text) {
-  if (!window.speechSynthesis) return;
-  const uttr = new SpeechSynthesisUtterance(text);
-  uttr.lang = 'en-US';
-  speechSynthesis.speak(uttr);
-}
+reviewBtn.addEventListener('click', () => {
+  if (!wrongQuestions.length) {
+    alert('復習する間違い問題がありません。');
+    return;
+  }
+  currentSet = wrongQuestions.slice();
+  index = 0;
+  combo = 0;
+  totalScore = 0;
+  quizPanel.style.display = 'block';
+  answerText.style.display = 'none';
+  scoreInfo.textContent = 'スコア: 0';
+  comboInfo.textContent = 'コンボ: 0';
+  showQuestion();
+});
 
+showAnswerBtn.addEventListener('click', () => {
+  answerText.style.display = 'block';
+});
+
+correctBtn.addEventListener('click', () => handleAnswer(true, false));
+wrongBtn.addEventListener('click', () => handleAnswer(false, false));
+
+// --- タイマー・スコア ---
 function startTimer() {
   clearInterval(timerId);
   startTime = performance.now();
@@ -158,6 +210,7 @@ function calcBaseScore(elapsedSec) {
   return Math.round(base);
 }
 
+// --- 出題 ---
 function showQuestion() {
   const q = currentSet[index];
   const direction = getDirection();
@@ -177,6 +230,8 @@ function showQuestion() {
     answer = q.word;
   }
 
+  q.actualDir = actualDir; // 後で履歴用に保持
+
   questionText.textContent = question;
   answerText.textContent = answer;
   answerText.style.display = 'none';
@@ -186,7 +241,7 @@ function showQuestion() {
 
   if (mode === 'self') {
     showAnswerBtn.style.display = 'inline-block';
-    judgeButtons.style.display = 'block';
+    judgeButtons.style.display = 'flex';
   } else {
     showAnswerBtn.style.display = 'none';
     judgeButtons.style.display = 'none';
@@ -223,36 +278,32 @@ function setupChoices(q, actualDir) {
   });
 }
 
-showAnswerBtn.addEventListener('click', () => {
-  answerText.style.display = 'block';
-});
-
-correctBtn.addEventListener('click', () => handleAnswer(true, false));
-wrongBtn.addEventListener('click', () => handleAnswer(false, false));
-
+// --- 回答処理 ---
 function handleAnswer(isCorrect, timeout) {
   clearInterval(timerId);
+
   const elapsed = (performance.now() - startTime) / 1000;
   const baseScore = isCorrect ? calcBaseScore(elapsed) : 0;
-  const comboBefore = combo;
 
+  const q = currentSet[index];
+  const actualDir = q.actualDir;
+
+  const comboBefore = combo;
   if (isCorrect && !timeout) {
     combo++;
   } else {
     combo = 0;
   }
 
-  const added = isCorrect ? baseScore * Math.max(1, comboBefore || 1) : 0;
+  const added = isCorrect ? baseScore * combo : 0;
   totalScore += added;
 
   scoreInfo.textContent = `スコア: ${totalScore}`;
   comboInfo.textContent = `コンボ: ${combo}`;
 
-  const q = currentSet[index];
-  const direction = getDirection();
-  let actualDir = direction;
-  if (direction === 'random') {
-    actualDir = (questionText.textContent === q.word) ? 'en2ja' : 'ja2en';
+  if (!isCorrect || timeout) {
+    wrongQuestions.push({ level: q.level, word: q.word, meaning: q.meaning });
+    reviewBtn.disabled = false;
   }
 
   const record = {
@@ -264,11 +315,12 @@ function handleAnswer(isCorrect, timeout) {
     correct: isCorrect && !timeout,
     time: Math.min(20, elapsed).toFixed(2),
     baseScore,
-    combo: comboBefore || (isCorrect ? 1 : 0),
+    combo: comboBefore,
     added
   };
   history.push(record);
   renderHistory();
+  updateChart();
 
   index++;
   if (index >= currentSet.length) {
@@ -279,9 +331,21 @@ function handleAnswer(isCorrect, timeout) {
   }
 }
 
+// --- 履歴表示・フィルタ・CSV ---
+function getFilteredHistory() {
+  return history.filter(r => {
+    if (filterLevel.value !== 'all' && r.level !== filterLevel.value) return false;
+    if (filterDirection.value !== 'all' && r.direction !== filterDirection.value) return false;
+    if (filterCorrect.value === 'true' && !r.correct) return false;
+    if (filterCorrect.value === 'false' && r.correct) return false;
+    return true;
+  });
+}
+
 function renderHistory() {
+  const filtered = getFilteredHistory();
   historyTableBody.innerHTML = '';
-  history.forEach(r => {
+  filtered.forEach(r => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${r.no}</td>
@@ -298,3 +362,90 @@ function renderHistory() {
     historyTableBody.appendChild(tr);
   });
 }
+
+applyFilterBtn.addEventListener('click', () => {
+  renderHistory();
+  updateChart();
+});
+
+resetFilterBtn.addEventListener('click', () => {
+  filterLevel.value = 'all';
+  filterDirection.value = 'all';
+  filterCorrect.value = 'all';
+  renderHistory();
+  updateChart();
+});
+
+exportCsvBtn.addEventListener('click', () => {
+  if (!history.length) {
+    alert('履歴がありません。');
+    return;
+  }
+  const rows = [
+    ['no', 'level', 'direction', 'question', 'answer', 'correct', 'time', 'baseScore', 'combo', 'added']
+  ];
+  history.forEach(r => {
+    const row = [
+      r.no,
+      r.level,
+      r.direction,
+      `"${r.question.replace(/"/g, '""')}"`,
+      `"${r.answer.replace(/"/g, '""')}"`,
+      r.correct ? '1' : '0',
+      r.time,
+      r.baseScore,
+      r.combo,
+      r.added
+    ];
+    rows.push(row);
+  });
+  const csv = rows.map(r => r.join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'history.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
+
+// --- グラフ（正解/不正解の件数） ---
+function updateChart() {
+  const filtered = getFilteredHistory();
+  const correctCount = filtered.filter(r => r.correct).length;
+  const wrongCount = filtered.length - correctCount;
+
+  const data = {
+    labels: ['正解', '不正解'],
+    datasets: [{
+      label: '件数',
+      data: [correctCount, wrongCount],
+      backgroundColor: ['#4caf50', '#f44336']
+    }]
+  };
+
+  if (chart) {
+    chart.data = data;
+    chart.update();
+  } else {
+    chart = new Chart(chartCanvas, {
+      type: 'bar',
+      data,
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: false }
+        },
+        scales: {
+          y: { beginAtZero: true, precision: 0 }
+        }
+      }
+    });
+  }
+}
+
+// 初期描画
+renderHistory();
+updateChart();
