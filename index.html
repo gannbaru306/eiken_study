@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>英検学習アプリ</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>英検 学習アプリ</h1>
+
+  <section class="panel">
+    <h2>1. データ読み込み</h2>
+    <p>英検データ（CSV：level,word,meaning）を選択してください。</p>
+    <input type="file" id="file-input" accept=".csv">
+    <p class="info" id="file-info"></p>
+  </section>
+
+  <section class="panel">
+    <h2>2. 設定</h2>
+
+    <div class="row">
+      <strong>級：</strong>
+      <label><input type="radio" name="level" value="5" checked>5級</label>
+      <label><input type="radio" name="level" value="4">4級</label>
+      <label><input type="radio" name="level" value="3">3級</label>
+      <label><input type="radio" name="level" value="準2">準2級</label>
+      <label><input type="radio" name="level" value="2">2級</label>
+      <label><input type="radio" name="level" value="準1">準1級</label>
+      <label><input type="radio" name="level" value="1">1級</label>
+    </div>
+
+    <div class="row">
+      <strong>出題方向：</strong>
+      <label><input type="radio" name="direction" value="en2ja" checked>英 → 日（読み上げあり）</label>
+      <label><input type="radio" name="direction" value="ja2en">日 → 英</label>
+      <label><input type="radio" name="direction" value="random">ランダム</label>
+    </div>
+
+    <div class="row">
+      <strong>出題モード：</strong>
+      <label><input type="radio" name="mode" value="self" checked>自己採点</label>
+      <label><input type="radio" name="mode" value="choice">4択</label>
+    </div>
+
+    <div class="row">
+      <label>
+        <strong>問題数：</strong>
+        <input type="number" id="question-count" min="1" value="10">
+      </label>
+      <span class="info" id="max-info"></span>
+    </div>
+
+    <button id="start-btn">クイズ開始</button>
+  </section>
+
+  <section class="panel" id="quiz-panel" style="display:none;">
+    <h2>3. クイズ</h2>
+    <div class="row">
+      <span id="progress"></span>
+      <span id="timer"></span>
+      <span id="score-info"></span>
+    </div>
+    <div class="row">
+      <span id="combo-info"></span>
+    </div>
+
+    <div id="quiz-area">
+      <div id="question-text"></div>
+      <div id="choices" class="choices"></div>
+
+      <button id="show-answer-btn">答えを表示</button>
+      <div id="answer-text" class="answer" style="display:none;"></div>
+
+      <div class="row" id="judge-buttons">
+        <button id="correct-btn">正解だった</button>
+        <button id="wrong-btn">間違えた</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>4. 履歴</h2>
+    <table id="history-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>級</th>
+          <th>方向</th>
+          <th>問題</th>
+          <th>答え</th>
+          <th>正誤</th>
+          <th>時間(s)</th>
+          <th>基礎スコア</th>
+          <th>コンボ</th>
+          <th>加算スコア</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <script src="app.js"></script>
+</body>
+</html>
