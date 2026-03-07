@@ -339,10 +339,10 @@ function handleAnswer(isCorrect, timeout) {
     }
   }
 
-  // 復習モードで正解 → reviewed = true
-  if (inReviewMode && isCorrect && !timeout) {
+
+if (inReviewMode && isCorrect && !timeout) {
     q.reviewed = true;
-  }
+}
 
   // 履歴追加
   history.push({
