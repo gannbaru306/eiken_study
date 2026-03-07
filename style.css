@@ -1,0 +1,98 @@
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  max-width: 900px;
+  margin: 20px auto;
+  padding: 0 10px 40px;
+  line-height: 1.5;
+}
+
+h1 {
+  font-size: 1.6rem;
+  margin-bottom: 10px;
+}
+
+h2 {
+  font-size: 1.2rem;
+  margin: 0 0 8px;
+}
+
+.panel {
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 15px;
+  background: #fafafa;
+}
+
+.row {
+  margin: 6px 0;
+}
+
+label {
+  margin-right: 10px;
+}
+
+button {
+  padding: 6px 12px;
+  margin: 4px 4px 4px 0;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.info {
+  font-size: 0.9rem;
+  color: #555;
+  margin-left: 8px;
+}
+
+#question-text {
+  font-size: 1.8rem;
+  margin: 10px 0;
+}
+
+.answer {
+  font-size: 1.2rem;
+  color: #333;
+  margin-top: 6px;
+}
+
+#timer {
+  margin-left: auto;
+  font-weight: bold;
+}
+
+#score-info, #combo-info {
+  font-size: 0.9rem;
+  color: #333;
+  margin-left: 10px;
+}
+
+.choices {
+  margin: 8px 0;
+}
+
+.choices button {
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+
+#history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+#history-table th,
+#history-table td {
+  border: 1px solid #ddd;
+  padding: 4px 6px;
+}
+
+#history-table thead {
+  background: #eee;
+}
