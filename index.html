@@ -4,19 +4,20 @@
   <meta charset="UTF-8">
   <title>英検学習アプリ</title>
   <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-  <h1>英検 学習アプリ</h1>
+  <h1>英検 学習アプリv1.1</h1>
 
   <section class="panel">
-    <h2>1. データ読み込み</h2>
+    <h2>データ読み込み</h2>
     <p>英検データ（CSV：level,word,meaning）を選択してください。</p>
     <input type="file" id="file-input" accept=".csv">
     <p class="info" id="file-info"></p>
   </section>
 
   <section class="panel">
-    <h2>2. 設定</h2>
+    <h2>設定</h2>
 
     <div class="row">
       <strong>級：</strong>
@@ -51,11 +52,12 @@
     </div>
 
     <button id="start-btn">クイズ開始</button>
+    <button id="review-btn" disabled>間違えた問題だけで復習</button>
   </section>
 
   <section class="panel" id="quiz-panel" style="display:none;">
-    <h2>3. クイズ</h2>
-    <div class="row">
+    <h2>クイズ</h2>
+    <div class="row top-row">
       <span id="progress"></span>
       <span id="timer"></span>
       <span id="score-info"></span>
@@ -79,7 +81,45 @@
   </section>
 
   <section class="panel">
-    <h2>4. 履歴</h2>
+    <h2>履歴・分析</h2>
+
+    <div class="row">
+      <strong>フィルタ：</strong>
+      <label>級
+        <select id="filter-level">
+          <option value="all">すべて</option>
+          <option value="5">5級</option>
+          <option value="4">4級</option>
+          <option value="3">3級</option>
+          <option value="準2">準2級</option>
+          <option value="2">2級</option>
+          <option value="準1">準1級</option>
+          <option value="1">1級</option>
+        </select>
+      </label>
+      <label>方向
+        <select id="filter-direction">
+          <option value="all">すべて</option>
+          <option value="en2ja">英→日</option>
+          <option value="ja2en">日→英</option>
+        </select>
+      </label>
+      <label>正誤
+        <select id="filter-correct">
+          <option value="all">すべて</option>
+          <option value="true">正解のみ</option>
+          <option value="false">不正解のみ</option>
+        </select>
+      </label>
+      <button id="apply-filter-btn">フィルタ適用</button>
+      <button id="reset-filter-btn">リセット</button>
+      <button id="export-csv-btn">履歴をCSVでダウンロード</button>
+    </div>
+
+    <div class="row">
+      <canvas id="history-chart" height="120"></canvas>
+    </div>
+
     <table id="history-table">
       <thead>
         <tr>
