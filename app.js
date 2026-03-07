@@ -8,6 +8,7 @@ let startTime = 0;
 let history = [];
 let wrongQuestions = [];
 let chart = null;
+let inReviewMode = false;
 
 // 音声
 let englishVoice = null;
@@ -67,7 +68,7 @@ function parseCSV(text) {
       level: cols[levelIdx],
       word: cols[wordIdx],
       meaning: cols[meaningIdx],
-      reviewed: false // ← 復習済みフラグ
+      reviewed: false
     });
   }
   return data;
@@ -94,16 +95,28 @@ if ('speechSynthesis' in window) {
   initVoices();
 }
 
-function speak(text, lang) {
+// --- 言語判定（日本語なら ja、英語なら en） ---
+function detectLang(text) {
+  return /[ぁ-んァ-ン一-龠]/.test(text) ? 'ja' : 'en';
+}
+
+function speak(text) {
   if (!window.speechSynthesis) return;
+
+  if (!englishVoice || !japaneseVoice) {
+    setTimeout(() => speak(text), 200);
+    return;
+  }
+
+  const lang = detectLang(text);
   const uttr = new SpeechSynthesisUtterance(text);
 
   if (lang === 'en') {
     uttr.lang = 'en-US';
-    if (englishVoice) uttr.voice = englishVoice;
+    uttr.voice = englishVoice;
   } else {
     uttr.lang = 'ja-JP';
-    if (japaneseVoice) uttr.voice = japaneseVoice;
+    uttr.voice = japaneseVoice;
   }
 
   window.speechSynthesis.cancel();
@@ -139,7 +152,7 @@ function updateMaxInfo() {
     return;
   }
   const lv = getSelectedLevel();
-  const filtered = allData.filter(d => d.level === lv);
+  const filtered = allData.filter(d => d.level === lv && !d.reviewed);
   maxInfo.textContent = `（最大：${filtered.length}問）`;
 }
 
@@ -149,6 +162,8 @@ document.querySelectorAll('input[name="level"]').forEach(r => {
 
 // --- クイズ開始 ---
 startBtn.addEventListener('click', () => {
+  inReviewMode = false;
+
   if (!allData.length) {
     alert('CSVを読み込んでください。');
     return;
@@ -186,7 +201,10 @@ reviewBtn.addEventListener('click', () => {
     return;
   }
 
+  inReviewMode = true;
   currentSet = wrongQuestions.slice();
+  wrongQuestions = []; // ← 重要：倍増防止
+
   index = 0;
   combo = 0;
   totalScore = 0;
@@ -261,16 +279,11 @@ function showQuestion() {
     setupChoices(q, actualDir);
   }
 
-  // 読み上げ
-  if (actualDir === 'en2ja') {
-    speak(question, 'en');
-  } else {
-    speak(question, 'ja');
-  }
-
+  speak(question);
   startTimer();
 }
 
+// --- 選択肢 ---
 function setupChoices(q, actualDir) {
   const correct = actualDir === 'en2ja' ? q.meaning : q.word;
   const pool = allData.filter(d => d.level === q.level && d !== q);
@@ -320,12 +333,14 @@ function handleAnswer(isCorrect, timeout) {
 
   // 間違えた問題 → 復習対象
   if (!isCorrect || timeout) {
-    wrongQuestions.push(q);
-    reviewBtn.disabled = false;
+    if (!inReviewMode) {
+      wrongQuestions.push(q);
+      reviewBtn.disabled = false;
+    }
   }
 
-  // 復習済みフラグ（復習モード時のみ）
-  if (reviewBtn.disabled === false && isCorrect && !timeout) {
+  // 復習モードで正解 → reviewed = true
+  if (inReviewMode && isCorrect && !timeout) {
     q.reviewed = true;
   }
 
@@ -475,6 +490,15 @@ function updateChart() {
     });
   }
 }
+
+// --- 履歴リセット ---
+document.getElementById("clear-history-btn").addEventListener("click", () => {
+  history = [];
+  wrongQuestions = [];
+  renderHistory();
+  updateChart();
+  alert("履歴をリセットしました");
+});
 
 // 初期描画
 renderHistory();
