@@ -9,6 +9,13 @@ let history = [];
 let wrongQuestions = [];
 let chart = null;
 let inReviewMode = false;
+let inTodayReviewMode = false;
+// 単語別記録: { "<level>|<word>": { level, word, meaning, correct, wrong, intervalDays, due, lastSeen } }
+let words = {};
+
+// --- v1.6: 永続化 + 間隔反復 ---
+const STORAGE_KEY = 'eiken_study_v1';
+const SM2_STEPS = [1, 3, 7, 14, 30]; // 正解時の間隔（日）。上限30日
 
 // 音声
 let englishVoice = null;
@@ -20,6 +27,11 @@ const fileInfo = document.getElementById('file-info');
 const maxInfo = document.getElementById('max-info');
 const startBtn = document.getElementById('start-btn');
 const reviewBtn = document.getElementById('review-btn');
+const todayReviewBtn = document.getElementById('today-review-btn');
+const dueCountBadge = document.getElementById('due-count-badge');
+const importCsvBtn = document.getElementById('import-csv-btn');
+const importHistoryInput = document.getElementById('import-history-input');
+const clearDataBtn = document.getElementById('clear-data-btn');
 const quizPanel = document.getElementById('quiz-panel');
 const progressEl = document.getElementById('progress');
 const timerEl = document.getElementById('timer');
@@ -42,13 +54,120 @@ const resetFilterBtn = document.getElementById('reset-filter-btn');
 const exportCsvBtn = document.getElementById('export-csv-btn');
 const chartCanvas = document.getElementById('history-chart');
 
+// --- v1.6: 日付・間隔反復（簡易SM-2）・永続化 ---
+// 日付はローカル日付の YYYY-MM-DD で扱う（UTCにするとJSTで1日ずれるため）。
+function todayStr(date) {
+  const d = date || new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function addDays(dateStr, days) {
+  const parts = dateStr.split('-').map(Number);
+  const d = new Date(parts[0], parts[1] - 1, parts[2]);
+  d.setDate(d.getDate() + days);
+  return todayStr(d);
+}
+
+function wordKey(level, word) {
+  return `${level}|${word}`;
+}
+
+// 正解: 1 -> 3 -> 7 -> 14 -> 30日（上限30）。不正解・時間切れ: 1日に戻す。
+function nextIntervalDays(current, isCorrect) {
+  if (!isCorrect) return 1;
+  if (!current) return 1;
+  const idx = SM2_STEPS.indexOf(current);
+  if (idx === -1) {
+    const next = SM2_STEPS.find(s => s > current);
+    return next === undefined ? 30 : next;
+  }
+  return SM2_STEPS[Math.min(idx + 1, SM2_STEPS.length - 1)];
+}
+
+function updateWordRecord(q, isCorrect, nowStr) {
+  const now = nowStr || todayStr();
+  const key = wordKey(q.level, q.word);
+  const rec = words[key] || {
+    level: q.level,
+    word: q.word,
+    meaning: q.meaning,
+    correct: 0,
+    wrong: 0,
+    intervalDays: 0,
+    due: '',
+    lastSeen: ''
+  };
+  if (isCorrect) rec.correct++;
+  else rec.wrong++;
+  rec.meaning = q.meaning;
+  rec.intervalDays = nextIntervalDays(rec.intervalDays, isCorrect);
+  rec.lastSeen = now;
+  rec.due = addDays(now, rec.intervalDays);
+  words[key] = rec;
+  return rec;
+}
+
+// 期限が来た単語: due <= 今日。dueが古い順、次に間違えた回数が多い順。
+function getDueWords(today) {
+  const t = today || todayStr();
+  return Object.values(words)
+    .filter(w => w.due && w.due <= t)
+    .sort((a, b) => a.due.localeCompare(b.due) || b.wrong - a.wrong || a.lastSeen.localeCompare(b.lastSeen));
+}
+
+function saveProgress() {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 1, history, words }));
+  } catch (e) {
+    // 容量不足などで保存できない場合は黙って無視する（学習自体は続けられる）
+  }
+}
+
+function loadProgress() {
+  if (typeof localStorage === 'undefined') return false;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return false;
+    const data = JSON.parse(raw);
+    if (!data || typeof data !== 'object') return false;
+    if (Array.isArray(data.history)) history = data.history;
+    if (data.words && typeof data.words === 'object') words = data.words;
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function clearSavedProgress() {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch (e) {
+    // 無視
+  }
+}
+
+function updateDueBadge() {
+  if (!dueCountBadge) return;
+  const n = getDueWords().length;
+  dueCountBadge.textContent = `今日の復習：${n}件`;
+}
+
+// CSVの1行をクォート対応で分割する（単語CSV・履歴CSVで共通）。
+function splitCSVLine(line) {
+  return line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g)?.map(s => s.replace(/^"|"$/g, '')) || [];
+}
+
 // --- CSVパーサー（クォート対応） ---
 function parseCSV(text) {
   const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
   if (!lines.length) return [];
 
-  const splitLine = (line) =>
-    line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g)?.map(s => s.replace(/^"|"$/g, '')) || [];
+  const splitLine = splitCSVLine;
 
   const header = splitLine(lines[0]);
   const levelIdx = header.indexOf('level');
@@ -72,6 +191,42 @@ function parseCSV(text) {
     });
   }
   return data;
+}
+
+// --- v1.6: 履歴CSV（エクスポート形式）のパーサー ---
+// 形式: no,level,direction,question,answer,correct,time,baseScore,combo,added,reviewed
+// correct/reviewed は '1'/'0'。due（次回復習日）は履歴CSVに含まれないため空欄になる。
+function parseHistoryCSV(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
+  if (!lines.length) return [];
+
+  const header = splitCSVLine(lines[0]);
+  const idx = name => header.indexOf(name);
+  if (idx('no') === -1 || idx('level') === -1 || idx('question') === -1 || idx('answer') === -1) {
+    alert('履歴CSVの形式が違います。エクスポートした履歴CSVを使ってください。');
+    return [];
+  }
+
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = splitCSVLine(lines[i]);
+    if (!cols.length) continue;
+    rows.push({
+      no: rows.length + 1,
+      level: cols[idx('level')] || '',
+      direction: cols[idx('direction')] || '',
+      question: cols[idx('question')] || '',
+      answer: cols[idx('answer')] || '',
+      correct: cols[idx('correct')] === '1',
+      time: cols[idx('time')] || '0',
+      baseScore: Number(cols[idx('baseScore')]) || 0,
+      combo: Number(cols[idx('combo')]) || 0,
+      added: Number(cols[idx('added')]) || 0,
+      reviewed: cols[idx('reviewed')] === '1',
+      due: ''
+    });
+  }
+  return rows;
 }
 
 // --- 音声ボイスの初期化 ---
@@ -163,6 +318,7 @@ document.querySelectorAll('input[name="level"]').forEach(r => {
 // --- クイズ開始 ---
 startBtn.addEventListener('click', () => {
   inReviewMode = false;
+  inTodayReviewMode = false;
 
   if (!allData.length) {
     alert('CSVを読み込んでください。');
@@ -202,8 +358,51 @@ reviewBtn.addEventListener('click', () => {
   }
 
   inReviewMode = true;
+  inTodayReviewMode = false;
   currentSet = wrongQuestions.slice();
   wrongQuestions = []; // ← 重要：倍増防止
+
+  index = 0;
+  combo = 0;
+  totalScore = 0;
+
+  quizPanel.style.display = 'block';
+  scoreInfo.textContent = 'スコア: 0';
+  comboInfo.textContent = 'コンボ: 0';
+
+  showQuestion();
+});
+
+// --- v1.6: 今日の復習モード ---
+// 期限（due）が来た単語を、dueが古い順・間違えた回数が多い順に出題する。
+// 級は問わない（全級の期限切れ単語が対象）。CSV未読込でも、保存済みの
+// 単語記録から出題できる。期限切れがなければ、セッション内の間違えた
+// 問題（wrongQuestions）にフォールバックする。
+todayReviewBtn.addEventListener('click', () => {
+  const due = getDueWords();
+
+  if (due.length) {
+    let n = parseInt(questionCountInput.value, 10);
+    if (isNaN(n) || n < 1) n = 1;
+    if (n > due.length) n = due.length;
+
+    currentSet = due.slice(0, n).map(w => {
+      const fromData = allData.find(d => d.level === w.level && d.word === w.word);
+      return fromData
+        ? { ...fromData, reviewed: false }
+        : { level: w.level, word: w.word, meaning: w.meaning, reviewed: false };
+    });
+    inReviewMode = false;
+    inTodayReviewMode = true;
+  } else if (wrongQuestions.length) {
+    inReviewMode = true;
+    inTodayReviewMode = false;
+    currentSet = wrongQuestions.slice();
+    wrongQuestions = []; // ← 倍増防止
+  } else {
+    alert('今日の復習はありません。');
+    return;
+  }
 
   index = 0;
   combo = 0;
@@ -359,6 +558,9 @@ if (inReviewMode && isCorrect && !timeout) {
     q.reviewed = true;
 }
 
+  // v1.6: 単語別記録を更新（簡易SM-2）。正解なら間隔を伸ばし、不正解・時間切れなら1日に戻す。
+  const record = updateWordRecord(q, isCorrect && !timeout);
+
   // 履歴追加
   history.push({
     no: history.length + 1,
@@ -371,14 +573,22 @@ if (inReviewMode && isCorrect && !timeout) {
     baseScore,
     combo: comboBefore,
     added,
-    reviewed: q.reviewed
+    reviewed: q.reviewed,
+    due: record ? record.due : ''
   });
+
+  // v1.6: 回答のたびに保存する
+  saveProgress();
+  updateDueBadge();
 
   renderHistory();
   updateChart();
 
   index++;
   if (index >= currentSet.length) {
+    // v1.6: 復習モード完了時にも保存する（念のため）
+    saveProgress();
+    updateDueBadge();
     alert(`終了！ スコア: ${totalScore}`);
     quizPanel.style.display = 'none';
   } else {
@@ -415,6 +625,7 @@ function renderHistory() {
       <td>${r.combo}</td>
       <td>${r.added}</td>
       <td>${r.reviewed ? '△' : ''}</td>
+      <td>${r.due || ''}</td>
     `;
     historyTableBody.appendChild(tr);
   });
@@ -475,8 +686,49 @@ exportCsvBtn.addEventListener('click', () => {
   URL.revokeObjectURL(url);
 });
 
+// --- v1.6: 履歴CSVインポート（復元） ---
+// エクスポートした履歴CSVを読み込み、現在の履歴を置き換える。
+// 単語別記録（words）は履歴CSVに含まれないため、復元されない。
+importCsvBtn.addEventListener('click', () => {
+  importHistoryInput.click();
+});
+
+importHistoryInput.addEventListener('change', e => {
+  const file = e.target.files[0];
+  importHistoryInput.value = '';
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const rows = parseHistoryCSV(ev.target.result);
+    if (!rows.length) return;
+    history = rows;
+    saveProgress();
+    renderHistory();
+    updateChart();
+    updateDueBadge();
+    alert(`履歴を復元しました（${rows.length}件）`);
+  };
+  reader.readAsText(file, 'UTF-8');
+});
+
+// --- v1.6: 保存データを消去 ---
+// localStorage の eiken_study_v1 と、メモリ上の履歴・単語別記録をすべて消す。
+clearDataBtn.addEventListener('click', () => {
+  if (!confirm('保存データ（履歴と単語別記録）をすべて消去しますか？')) return;
+  history = [];
+  words = {};
+  wrongQuestions = [];
+  clearSavedProgress();
+  renderHistory();
+  updateChart();
+  updateDueBadge();
+  alert('保存データを消去しました');
+});
+
 // --- グラフ ---
 function updateChart() {
+  // v1.6: Chart.jsのCDNが読めないときはグラフを描かずに抜ける（初回読込で止まらないように）。
+  if (typeof Chart === 'undefined') return;
   const filtered = getFilteredHistory();
   const correctCount = filtered.filter(r => r.correct).length;
   const wrongCount = filtered.length - correctCount;
@@ -507,14 +759,42 @@ function updateChart() {
 }
 
 // --- 履歴リセット ---
+// v1.6: 履歴だけでなく、保存済みの単語別記録も含めて保存データを消す。
 document.getElementById("clear-history-btn").addEventListener("click", () => {
   history = [];
+  words = {};
   wrongQuestions = [];
+  clearSavedProgress();
   renderHistory();
   updateChart();
+  updateDueBadge();
   alert("履歴をリセットしました");
 });
+
+// --- v1.6: 保存済みデータを読み込んで初期描画 ---
+loadProgress();
 
 // 初期描画
 renderHistory();
 updateChart();
+updateDueBadge();
+
+// Nodeでのテスト用（ブラウザでは module は未定義のため無害）
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = {
+    nextIntervalDays,
+    addDays,
+    todayStr,
+    updateWordRecord,
+    getDueWords,
+    parseHistoryCSV,
+    saveProgress,
+    loadProgress,
+    STORAGE_KEY,
+    SM2_STEPS,
+    _getWords: () => words,
+    _setWords: (w) => { words = w; },
+    _getHistory: () => history,
+    _setHistory: (h) => { history = h; }
+  };
+}

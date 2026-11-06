@@ -7,7 +7,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-  <h1>英検 学習アプリv1.5</h1>
+  <h1>英検 学習アプリv1.6</h1>
 
   <section class="panel">
     <h2>データ読み込み</h2>
@@ -52,6 +52,8 @@
 
     <button id="start-btn">クイズ開始</button>
     <button id="review-btn" disabled>間違えた問題だけで復習</button>
+    <button id="today-review-btn">今日の復習</button>
+    <span id="due-count-badge" class="badge">今日の復習：0件</span>
   </section>
 
   <section class="panel" id="quiz-panel" style="display:none;">
@@ -114,6 +116,9 @@
       <button id="reset-filter-btn">フィルタリセット</button>
       <button id="clear-history-btn">履歴をリセット</button>
       <button id="export-csv-btn">履歴をCSVでダウンロード</button>
+      <button id="import-csv-btn">履歴をCSVから復元</button>
+      <input type="file" id="import-history-input" accept=".csv" style="display:none;">
+      <button id="clear-data-btn">保存データを消去</button>
     </div>
 
     <div class="row">
@@ -134,6 +139,7 @@
           <th>コンボ</th>
           <th>加算スコア</th>
           <th>復習済</th>
+          <th>次回復習</th>
         </tr>
       </thead>
       <tbody></tbody>
